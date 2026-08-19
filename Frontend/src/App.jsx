@@ -210,7 +210,7 @@ export default function App() {
 
     try {
       // Primary requirement: POST to http://127.0.0.1:8000/api/analyze
-      const response = await axios.post("http://localhost:8000/api/analyze", payload, {
+      const response = await axios.post("/api/analyze", payload, {
         timeout: 60000,
         headers: { "Content-Type": "application/json" },
       });
