@@ -1,6 +1,5 @@
 # Node / React / Vite
 node_modules/
-dist/
 build/
 .npm/
 .yarn/
