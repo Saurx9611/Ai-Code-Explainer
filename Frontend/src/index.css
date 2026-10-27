@@ -1,1 +1,66 @@
 @import "tailwindcss";
+
+/* ==========================================================================
+   Monaco Editor AST & Vulnerability Line Highlights & Glyphs
+   ========================================================================== */
+
+.monaco-issue-high-line {
+  background: rgba(239, 68, 68, 0.18) !important;
+  border-left: 3px solid #ef4444 !important;
+}
+
+.monaco-issue-medium-line {
+  background: rgba(245, 158, 11, 0.18) !important;
+  border-left: 3px solid #f59e0b !important;
+}
+
+.monaco-issue-low-line {
+  background: rgba(59, 130, 246, 0.18) !important;
+  border-left: 3px solid #3b82f6 !important;
+}
+
+.monaco-issue-high-glyph {
+  background: #ef4444;
+  border-radius: 50%;
+  width: 9px !important;
+  height: 9px !important;
+  margin-left: 3px;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+}
+
+.monaco-issue-medium-glyph {
+  background: #f59e0b;
+  border-radius: 50%;
+  width: 9px !important;
+  height: 9px !important;
+  margin-left: 3px;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+}
+
+.monaco-issue-low-glyph {
+  background: #3b82f6;
+  border-radius: 50%;
+  width: 9px !important;
+  height: 9px !important;
+  margin-left: 3px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.6);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.9);
+}

@@ -23,12 +23,11 @@ class CodeAnalysisResponse(BaseModel):
 
 load_dotenv()
 
-# 2. Initialize the client using the exported setup
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError("GEMINI_API_KEY is missing. Check your .env file in the Backend directory.")
-
-client = genai.Client(api_key=api_key)
+def get_gemini_client():
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is missing. Check your .env file in the Backend directory.")
+    return genai.Client(api_key=api_key)
 
 # 3. Use the exported generation config
 generation_config = {
@@ -40,6 +39,7 @@ generation_config = {
 
 async def analyze_code_snippet(code: str, language: str) -> dict:
     prompt = f"Analyze this {language} code:\n\n{code}"
+    client = get_gemini_client()
     
     # 4. Execute the interaction call using your exported AI Studio settings
     interaction = client.interactions.create(

@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import Editor from "@monaco-editor/react";
-import axios from "axios";
 import {
   Play,
   Loader2,
@@ -21,7 +20,23 @@ import {
   Layers,
   X,
   ExternalLink,
+  Settings,
+  Server,
+  Wifi,
+  WifiOff,
+  Key,
+  HelpCircle,
+  CheckCircle2,
+  RefreshCw,
 } from "lucide-react";
+import {
+  analyzeCode,
+  checkBackendHealth,
+  getBackendUrl,
+  setBackendUrl,
+  getGeminiApiKey,
+  setGeminiApiKey,
+} from "./services/api";
 
 const DEFAULT_PYTHON_CODE = `import sqlite3
 
@@ -110,9 +125,46 @@ export default function App() {
   const [copiedCode, setCopiedCode] = useState(false);
   const [selectedIssueIndex, setSelectedIssueIndex] = useState(null);
 
+  // Backend connection & Settings state
+  const [backendStatus, setBackendStatus] = useState({ connected: false, loading: true });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [customBackendUrl, setCustomBackendUrl] = useState(getBackendUrl());
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState(getGeminiApiKey());
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState(null);
+
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const decorationsRef = useRef([]);
+
+  // Auto-detect backend status on mount
+  useEffect(() => {
+    checkBackendHealth().then((res) => {
+      setBackendStatus(res);
+    });
+  }, []);
+
+  // Save settings handler
+  const handleSaveSettings = () => {
+    setBackendUrl(customBackendUrl);
+    setGeminiApiKey(geminiApiKeyInput);
+    setIsSettingsOpen(false);
+    checkBackendHealth(customBackendUrl).then(setBackendStatus);
+    setToastType("info");
+    setErrorToast("API configuration saved successfully.");
+  };
+
+  // Test connection handler
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setConnectionTestResult(null);
+    const res = await checkBackendHealth(customBackendUrl);
+    setTestingConnection(false);
+    setConnectionTestResult(res);
+    if (res.connected) {
+      setBackendStatus(res);
+    }
+  };
 
   // Capture editor instance when Monaco mounts
   const handleEditorDidMount = (editor, monaco) => {
@@ -191,7 +243,7 @@ export default function App() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // Main Analysis function
+  // Main Analysis function with fallback and engine reporting
   const runAnalysis = async () => {
     if (!code.trim()) {
       setErrorToast("Please enter or paste Python code to analyze.");
@@ -203,24 +255,17 @@ export default function App() {
     setErrorToast(null);
     setSelectedIssueIndex(null);
 
-    const payload = {
-      code: code,
-      language: "python",
-    };
-
     try {
-      // Primary requirement: POST to http://127.0.0.1:8000/api/analyze
-      const response = await axios.post("/api/analyze", payload, {
-        timeout: 60000,
-        headers: { "Content-Type": "application/json" },
-      });
-      setAnalysis(response.data);
+      const result = await analyzeCode(code, "python");
+      setAnalysis(result);
+      if (result._engineNotice) {
+        setToastType("info");
+        setErrorToast(result._engineNotice);
+      }
     } catch (err) {
-      console.warn("Primary local backend unreachable:", err.message);
+      console.warn("Analysis error:", err.message);
       setToastType("error");
-      setErrorToast(
-        "Backend is unreachable at http://127.0.0.1:8000/api/analyze. Please ensure your local API server is active."
-      );
+      setErrorToast(err.message || "Failed to inspect code snippet.");
     } finally {
       setLoading(false);
     }
@@ -282,7 +327,7 @@ export default function App() {
         </div>
 
         {/* Header Right Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Preset Selector */}
           <div className="hidden md:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
             <span className="text-xs text-slate-400 px-2 flex items-center gap-1">
@@ -297,12 +342,52 @@ export default function App() {
                   setAnalysis(null);
                 }}
                 title={preset.description}
-                className="px-2.5 py-1 text-xs rounded-md font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
+                className="px-2.5 py-1 text-xs rounded-md font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
               >
                 {preset.name.split(" ")[0]}
               </button>
             ))}
           </div>
+
+          {/* Connection Status Badge */}
+          <button
+            id="connection-status-btn"
+            onClick={() => setIsSettingsOpen(true)}
+            title="Click to configure Backend URL or Gemini API Key"
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer bg-slate-900 hover:bg-slate-850"
+          >
+            {backendStatus.connected ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-emerald-300">FastAPI: Online</span>
+              </>
+            ) : geminiApiKeyInput ? (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                <span className="text-purple-300">Gemini: Client API</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                <span className="text-blue-300">GitHub Pages Mode</span>
+              </>
+            )}
+          </button>
+
+          {/* Settings Button */}
+          <button
+            id="open-settings-btn"
+            onClick={() => {
+              setCustomBackendUrl(getBackendUrl());
+              setGeminiApiKeyInput(getGeminiApiKey());
+              setConnectionTestResult(null);
+              setIsSettingsOpen(true);
+            }}
+            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer"
+            title="API & Backend Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
 
           {/* Analyze Code Primary Button */}
           <button
@@ -416,6 +501,22 @@ export default function App() {
 
             {analysis && (
               <div className="flex items-center gap-2 text-[11px]">
+                {analysis._engine && (
+                  <span
+                    className={`px-2 py-0.5 rounded font-mono font-medium border ${
+                      analysis._engine === "backend"
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                        : analysis._engine === "gemini-direct"
+                          ? "bg-purple-500/10 border-purple-500/30 text-purple-300"
+                          : "bg-blue-500/10 border-blue-500/30 text-blue-300"
+                    }`}
+                  >
+                    {analysis._engine === "backend" && "⚡ FastAPI"}
+                    {analysis._engine === "gemini-direct" && "✨ Gemini Direct"}
+                    {analysis._engine === "demo-preset" && "🛡️ Verified Preset"}
+                    {analysis._engine === "demo-heuristic" && "🔍 Static Heuristic"}
+                  </span>
+                )}
                 <span className="flex items-center gap-1 text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
                   <AlertTriangle className="w-3 h-3" />
                   {analysis.issues.length} {analysis.issues.length === 1 ? "Issue" : "Issues"}
@@ -656,6 +757,202 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div
+          id="settings-modal-backdrop"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsSettingsOpen(false)}
+        >
+          <div
+            id="settings-modal"
+            className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-800/80 bg-slate-950/70 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <Settings className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">API & Backend Settings</h3>
+                  <p className="text-xs text-slate-400">Configure connection mode for local development and GitHub Pages</p>
+                </div>
+              </div>
+              <button
+                id="close-settings-btn"
+                onClick={() => setIsSettingsOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              {/* SECTION 1: FastAPI Backend */}
+              <div className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <Server className="w-4 h-4 text-emerald-400" />
+                    1. FastAPI Backend Server
+                  </label>
+                  <span
+                    className={`text-[11px] px-2 py-0.5 rounded-full font-mono font-medium flex items-center gap-1.5 ${
+                      backendStatus.connected
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : "bg-slate-800 text-slate-400 border border-slate-700"
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        backendStatus.connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
+                      }`}
+                    ></span>
+                    {backendStatus.connected ? "Connected" : "Offline"}
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Default local endpoint is <code className="text-indigo-300 font-mono">http://127.0.0.1:8000</code>. In Vite dev mode, requests to <code className="text-indigo-300 font-mono">/api</code> are automatically proxied to this backend.
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    id="backend-url-input"
+                    type="text"
+                    value={customBackendUrl}
+                    onChange={(e) => setCustomBackendUrl(e.target.value)}
+                    placeholder="e.g. http://127.0.0.1:8000 or custom deployed URL"
+                    className="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    id="test-connection-btn"
+                    onClick={handleTestConnection}
+                    disabled={testingConnection}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-medium text-slate-200 border border-slate-700 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {testingConnection ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    <span>Test</span>
+                  </button>
+                </div>
+
+                {/* Connection Test Feedback */}
+                {connectionTestResult && (
+                  <div
+                    className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                      connectionTestResult.connected
+                        ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+                        : "bg-red-500/10 border border-red-500/30 text-red-300"
+                    }`}
+                  >
+                    {connectionTestResult.connected ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                        <span>Successfully connected to FastAPI! Model: {connectionTestResult.model}</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+                        <span>Could not reach backend at this URL ({connectionTestResult.error})</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: Direct Gemini API (Client-side) */}
+              <div className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <Key className="w-4 h-4 text-purple-400" />
+                    2. Direct Google Gemini API Key (Client-Side)
+                  </label>
+                  <span className="text-[10px] text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
+                    GitHub Pages Ready
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  When deployed on GitHub Pages (or whenever your backend is offline), you can provide your own Gemini API Key to run live, real-time code inspections directly in the browser. Stored only in your local browser storage.
+                </p>
+
+                <input
+                  id="gemini-key-input"
+                  type="password"
+                  value={geminiApiKeyInput}
+                  onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                  placeholder="Paste your Google Gemini API Key (AIzaSy...)"
+                  className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                />
+
+                <div className="flex items-center justify-between pt-1">
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 underline underline-offset-2"
+                  >
+                    <span>Get a free Gemini API key on Google AI Studio</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
+              {/* SECTION 3: GitHub Pages Showcase Info */}
+              <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-200 space-y-1.5">
+                <div className="font-semibold flex items-center gap-1.5 text-blue-300">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  GitHub Pages Showcase & Demo Mode
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  The 3 preset examples (<strong className="text-white">SQL Injection</strong>, <strong className="text-white">Fibonacci O(2^N)</strong>, and <strong className="text-white">Path Traversal</strong>) are pre-verified to deliver comprehensive AST inspections, complexity breakdowns, and refactored code instantly with zero setup!
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-800/80 bg-slate-950/70 flex items-center justify-between">
+              <button
+                id="reset-settings-btn"
+                onClick={() => {
+                  setCustomBackendUrl("");
+                  setGeminiApiKeyInput("");
+                  setBackendUrl("");
+                  setGeminiApiKey("");
+                  setConnectionTestResult(null);
+                  checkBackendHealth("").then(setBackendStatus);
+                }}
+                className="text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                Reset to Defaults
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  id="cancel-settings-btn"
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="px-4 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="save-settings-btn"
+                  onClick={handleSaveSettings}
+                  className="px-5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all cursor-pointer"
+                >
+                  Save Settings
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
